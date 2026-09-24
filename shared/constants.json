@@ -1,0 +1,23 @@
+{
+  "_readme": "Reference-only constants shared conceptually between backend and frontend. Because backend/ and frontend/ are independent npm packages (see README 'Project structure' for why), this file is NOT imported directly by either build — it documents the values that backend/src/constants/*.ts and frontend/src/types/*.ts must be kept in sync with. If you change one, change the other and update this file too.",
+
+  "petTypes": ["CAT", "DOG", "FOX", "DRAGON"],
+  "rarities": ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"],
+  "itemCategories": ["FOOD", "TOY", "POTION", "TRAINING", "COSMETIC"],
+
+  "levelXpThresholds": {
+    "1": 0,
+    "2": 100,
+    "3": 250,
+    "4": 500,
+    "5": 850,
+    "note": "Levels 6+ extend this with a smoothly increasing step — see backend/src/constants/petData.ts:xpForLevel()"
+  },
+
+  "cooldownsMs": {
+    "feed": 3600000,
+    "play": 1800000,
+    "rest": 2700000,
+    "train": 7200000
+  }
+}

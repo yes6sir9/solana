@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Env files (never commit real secrets)
+.env
+.env.local
+!.env.example
+
+# Backend / Prisma
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/prisma/migrations/**/migration_lock.toml.bak
+
+# Solana / Anchor
+programs/**/target/
+.anchor/
+test-ledger/
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode/
+*.suo

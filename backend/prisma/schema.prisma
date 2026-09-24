@@ -1,0 +1,208 @@
+// PetNFT database schema.
+// MVP uses SQLite for zero-setup local development.
+// To switch to PostgreSQL: change provider to "postgresql", set
+// DATABASE_URL to a postgres connection string, and change the "String"
+// fields commented "// enum-like" back to real Prisma enums (SQLite has no
+// native enum support, so this MVP validates those values in application
+// code instead — see backend/src/constants/petData.ts and items.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  walletAddress  String    @unique
+  accountLevel   Int       @default(1)
+  accountXp      Int       @default(0)
+  petCoins       Int       @default(100) // PETCOIN — the in-game currency, NOT SOL, no real-money redemption
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  pets           Pet[]
+  inventory      InventoryItem[]
+  dailyRewards   DailyRewardClaim[]
+  transactions   Transaction[]
+  gameSessions   GameSession[]
+  actionLogs     ActionLog[]
+  questClaims    QuestClaim[]
+  mintPayments   MintPayment[]
+}
+
+model Pet {
+  id               String    @id @default(cuid())
+  ownerWallet      String
+  owner            User      @relation(fields: [ownerWallet], references: [walletAddress])
+
+  name             String
+  type             String    // enum-like: CAT | DOG | FOX | DRAGON (flavor label alongside archetype)
+  color            String    @default("#8b5cf6")
+  rarity           String    @default("COMMON") // enum-like: COMMON | UNCOMMON | RARE | EPIC | LEGENDARY | MYTHIC
+
+  // --- Deterministic DNA generation (see backend/src/services/dnaService.ts) ---
+  seedHash         String    // sha256 of the (never-persisted) generation seed
+  dnaHash          String    @unique // sha256 of the full trait combination — checked for uniqueness at mint time
+  archetype        String    // ROUND | QUADRUPED | HUMANOID | BIRD | AQUATIC
+  traits           String    // JSON-encoded PetTraits (ears/eyes/mouth/tail/legs/wings/fins/special/pattern)
+  bodyParams       String    // JSON-encoded BodyParams (width/height/size/headSize, each 0.8-1.2)
+  palette          String    // JSON-encoded Palette (baseHue/harmony/primary/secondary/patternColor/accent/outline)
+  traitScore       Int       @default(0)
+  auraType         String?   // FIRE | WATER | EARTH | AIR | LIGHTNING | SHADOW | LIGHT | VOID | null — cosmetic only
+  generation       Int       @default(1)
+  equippedAccessoryKey String?
+
+  level            Int       @default(1)
+  xp               Int       @default(0)
+
+  health           Int       @default(100)
+  hunger           Int       @default(100)
+  happiness        Int       @default(100)
+  energy           Int       @default(100)
+  strength         Int       @default(10)
+  speed            Int       @default(10)
+  luck             Int       @default(10)
+
+  // On-chain linkage (populated once the NFT is minted on Solana devnet).
+  nftMintAddress   String?   @unique
+  metadataUri      String?
+  mintStatus       String    @default("UNMINTED") // UNMINTED | MINTED
+
+  lastFedAt        DateTime?
+  lastPlayedAt     DateTime?
+  lastRestedAt     DateTime?
+  lastTrainedAt    DateTime?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  listings         MarketplaceListing[]
+  transactions     Transaction[]
+
+  @@index([ownerWallet])
+}
+
+// One row per confirmed on-chain mint-payment transfer to the treasury —
+// the unique `signature` is what makes payment verification replay-proof
+// (see backend/src/services/solanaVerifyService.ts).
+model MintPayment {
+  id            String   @id @default(cuid())
+  signature     String   @unique
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  lamports      Int
+  createdAt     DateTime @default(now())
+}
+
+// Periodic snapshots of the dynamic mint-price calculation — doubles as
+// the price cache (see economyService.getCurrentMintPrice) and as a real
+// historical record of how the economy moved over time.
+model EconomySnapshot {
+  id                String   @id @default(cuid())
+  priceSol          Float
+  totalMinted       Int
+  mintedLastHour    Int
+  mintedLast24h     Int
+  demandMultiplier  Float
+  supplyMultiplier  Float
+  createdAt         DateTime @default(now())
+}
+
+// A simple append-only log of gameplay actions, used to compute quest
+// progress live (e.g. "fed your pet 3 times today") without a separate
+// stateful progress tracker per quest.
+model ActionLog {
+  id            String   @id @default(cuid())
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  action        String   // FEED | PLAY | TRAIN | REST | GAME_COMPLETE | LEVEL_UP
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress, action, createdAt])
+}
+
+model GameSession {
+  id            String   @id @default(cuid())
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  gameKey       String   // e.g. REACTION | MEMORY
+  score         Int
+  xpAwarded     Int
+  coinsAwarded  Int
+  createdAt     DateTime @default(now())
+}
+
+// One row per wallet+questKey+day once claimed, so a daily quest can't be
+// claimed twice in the same day.
+model QuestClaim {
+  id            String   @id @default(cuid())
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  questKey      String
+  dayKey        String   // "YYYY-MM-DD" (UTC) — part of the uniqueness key
+  claimedAt     DateTime @default(now())
+
+  @@unique([walletAddress, questKey, dayKey])
+}
+
+model Item {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  description  String
+  category     String   // enum-like: FOOD | TOY | POTION | TRAINING | COSMETIC
+  rarity       String   @default("COMMON")
+  icon         String
+
+  inventoryEntries InventoryItem[]
+}
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  ownerWallet  String
+  owner        User     @relation(fields: [ownerWallet], references: [walletAddress])
+  itemId       String
+  item         Item     @relation(fields: [itemId], references: [id])
+  quantity     Int      @default(0)
+
+  updatedAt    DateTime @updatedAt
+
+  @@unique([ownerWallet, itemId])
+}
+
+model MarketplaceListing {
+  id           String   @id @default(cuid())
+  petId        String
+  pet          Pet      @relation(fields: [petId], references: [id])
+  sellerWallet String
+  priceSol     Float
+  status       String   @default("ACTIVE") // enum-like: ACTIVE | SOLD | CANCELLED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  type          String   // enum-like: LIST | BUY | CANCEL | DAILY_REWARD | MINT
+  petId         String?
+  pet           Pet?     @relation(fields: [petId], references: [id])
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  counterparty  String?
+  priceSol      Float?
+  createdAt     DateTime @default(now())
+}
+
+model DailyRewardClaim {
+  id            String   @id @default(cuid())
+  walletAddress String
+  user          User     @relation(fields: [walletAddress], references: [walletAddress])
+  xpAwarded     Int
+  petCoinsAwarded Int
+  itemKeyAwarded String?
+  claimedAt     DateTime @default(now())
+}
